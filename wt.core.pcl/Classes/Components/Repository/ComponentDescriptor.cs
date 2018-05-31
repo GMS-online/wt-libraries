@@ -22,7 +22,9 @@ namespace WhileTrue.Classes.Components
             this.Config = config;
             this.ConfigType = config?.GetType();
             this.PrivateRepository = privateRepository;
+            this.MustCreateOnUiThread = ComponentDescriptor.GetComponentUiThreadAffinity(type, this.Repository);
         }
+
 
         /// <summary>
         /// runtime type of the registered component
@@ -47,6 +49,11 @@ namespace WhileTrue.Classes.Components
         /// Link to the private repository that is given to the component, when set, other wise <c>null</c>
         /// </summary>
         public ComponentRepository PrivateRepository { get; }
+
+        /// <summary>
+        /// States whether the component instance can be created on any thread (including background) or if it must be done on the UI Thread
+        /// </summary>
+        public bool MustCreateOnUiThread { get; private set; }
 
         private IEnumerable<PropertyInfo> GetProvidedDelegatedProperties()
         {
@@ -130,16 +137,23 @@ namespace WhileTrue.Classes.Components
 
         private static string GetComponentName(Type type)
         {
-            ComponentAttribute[] Attributes = (ComponentAttribute[])type.GetCustomAttributes<ComponentAttribute>();
-            if (Attributes.Length != 1)
-            {
-                throw new ArgumentException($"'{type.FullName}' does not have a '[Component]' attribute declared.");
-            }
-            else
-            {
-                return Attributes[0].Name ?? type.Name;
-            }
+            return ComponentAttribute.FromType(type).Name ?? type.Name;
         }
 
+        private static bool GetComponentUiThreadAffinity(Type type, ComponentRepository repository)
+        {
+            ThreadAffinity ThreadAffinity = ComponentAttribute.FromType(type).ThreadAffinity;
+            switch (ThreadAffinity)
+            {
+                case ThreadAffinity.Automatic:
+                    return repository.GetMustCreateOnUiThread(type);
+                case ThreadAffinity.NeedsUiThread:
+                    return true;
+                case ThreadAffinity.SupportsBackground:
+                    return false;
+                default:
+                    throw new ArgumentOutOfRangeException();
+            }
+        }
     }
 }

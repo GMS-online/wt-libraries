@@ -1,13 +1,15 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace WhileTrue.Classes.Components
 {
     internal class SharedComponentInstance : ComponentInstance
     {
         private static readonly Dictionary<ComponentDescriptor, SharedInstanceWrapper> singletonInstances = new Dictionary<ComponentDescriptor, SharedInstanceWrapper>();
-
+        private readonly SemaphoreSlim instanceLock = new SemaphoreSlim(1, 1);
         internal SharedComponentInstance(ComponentDescriptor componentDescriptor)
             : base(componentDescriptor)
         {
@@ -39,14 +41,24 @@ namespace WhileTrue.Classes.Components
             }
         }
 
-        internal override object CreateInstance(Type interfaceType, ComponentContainer componentContainer, Action<string> progressCallback)
+        internal override async Task<object> CreateInstanceAsync(Type interfaceType, ComponentContainer componentContainer, Action<string> progressCallback, ComponentDescriptor[] resolveStack)
         {
-            if (this.InstanceReference == null)
+            await this.instanceLock.WaitAsync();
+            try
             {
-                this.InstanceReference = new SharedInstanceWrapper(this.DoCreateInstance(interfaceType, componentContainer, progressCallback));
+                if (this.InstanceReference == null)
+                {
+                    this.InstanceReference = new SharedInstanceWrapper(await this.DoCreateInstanceAsync(interfaceType, componentContainer, progressCallback, resolveStack));
+                }
+
+                return this.InstanceReference.AddReference(componentContainer);
             }
-            return this.InstanceReference.AddReference(componentContainer);
+            finally
+            {
+                this.instanceLock.Release();
+            }
         }
+
 
         internal override void Dispose(ComponentContainer componentContainer)
         {
